@@ -126,6 +126,7 @@ wherever possible, include a link to the original work. For example,
 # if someone wants to change the text, that text will change everywhere.
 # Also, you can't misspell it by accident.
 #
+import os.path
 from cellprofiler_core.module import ImageProcessing
 from cellprofiler_core.setting import Binary
 from cellprofiler_core.setting.choice import Choice
