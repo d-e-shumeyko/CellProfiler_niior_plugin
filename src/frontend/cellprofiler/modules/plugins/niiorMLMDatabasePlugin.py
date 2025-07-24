@@ -20,15 +20,29 @@ import scipy.ndimage
 # Otherwise, remove the line below and remove the "References" section from __doc__.
 #
 
-cite_paper_link = "https://doi.org/10.1186/s12859-021-04344-9"
+cite_paper_link = "https://doi.org/10.1016/1047-3203(90)90014-M"
 
 __doc__ = """\
-NIIOR Image Processor
+ImageTemplate
 =============
 
-This plugin is intended as a niche application for use in narrowly defined 
-use cases by the NIIOR staff. 
+**ImageTemplate** is an example image processing module. It's recommended to
+put a brief description of this module here and go into more detail below.
 
+This is an example of a module that takes one image as an input and
+produces a second image for downstream processing. You can use this as
+a starting point for your own module: rename this file and put it in your
+plugins directory.
+
+The text you see here will be displayed as the help for your module, formatted
+as `reStructuredText <http://docutils.sourceforge.net/rst.html>`_.
+
+Note whether or not this module supports 3D image data and respects masks.
+A module which respects masks applies an image's mask and operates only on
+the image data not obscured by the mask. Update the table below to indicate 
+which image processing features this module supports.
+
+|
 
 ============ ============ ===============
 Supports 2D? Supports 3D? Respects masks?
@@ -39,13 +53,8 @@ YES          NO           YES
 See also
 ^^^^^^^^
 
-This plugin uses the following modules:
-MorphologicalSkeleton; Morph; OverlayObjects; OverlayOutlines; Threshold;
-UnmixColors; ClassifyObjects; CombineObjects; ConvertImagesToObjects; 
-ConvertObjectsToImages; EditObjectsManually; FilterObjects; IdentifyObjectsIngrid;
-FilterObjects; IdentifyObjectsManually; IdentifyPrimaryObjects; 
-IdentifySecondaryObjects;IdentifyTertiaryObjects; MaskObjects; RelateObjects;
-SplitOrMergeObjects; TrackObjects; Closing; Opening; ReduceNoise; RemoveHoles; Watershed
+Is there another **Module** that is related to this one? If so, refer
+to that **Module** in this section. Otherwise, this section can be omitted.
 
 What do I need as input?
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -117,8 +126,6 @@ from cellprofiler_core.module import ImageProcessing
 from cellprofiler_core.setting import Binary
 from cellprofiler_core.setting.choice import Choice
 from cellprofiler_core.setting.text import Float
-#from cellprofiler.modules.morphologicalskeleton import morphologicalskeleton
-
 
 GRADIENT_MAGNITUDE = "Gradient magnitude"
 GRADIENT_DIRECTION_X = "Gradient direction - X"
@@ -147,7 +154,7 @@ GRADIENT_DIRECTION_Y = "Gradient direction - Y"
 #    should inherit from this class. These are modules that take objects as
 #    input and output new objects.
 #
-class niiorImageProcessing(ImageProcessing):
+class niiorMLMDatabasePlugin(ImageProcessing):
     #
     # The module starts by declaring the name that's used for display,
     # the category under which it is stored and the variable revision
@@ -157,7 +164,7 @@ class niiorImageProcessing(ImageProcessing):
     # This module's category is "Image Processing" which is defined
     # by its superclass.
     #
-    module_name = "niiorImageProcessing"
+    module_name = "niiorMLMDatabasePlugin"
 
     variable_revision_number = 1
 
@@ -170,7 +177,8 @@ class niiorImageProcessing(ImageProcessing):
     # If no citation is necessary, remove the "doi" dictionary below. 
     #
 
-    doi = {"https://doi.org/10.1016/1047-3203(90)90014-M"}
+    doi = {"Please cite the following when using ImageTemplate:": 'https://doi.org/10.1016/1047-3203(90)90014-M', 
+           "If you're also using specific technique X, cite:": 'https://doi.org/10.1016/1047-3203(90)90014-M'}
     #
     # "create_settings" is where you declare the user interface elements
     # (the "settings") which the user will use to customize your module.
@@ -190,7 +198,7 @@ class niiorImageProcessing(ImageProcessing):
         #    in your module.
         # -  y_name: an ImageName makes the image available to subsequent
         #    modules.
-        super(niiorImageProcessing, self).create_settings()
+        super(niiorMLMDatabasePlugin, self).create_settings()
 
         #
         # reST help that gets displayed when the user presses the
@@ -288,7 +296,7 @@ scales will give you short-range gradients.
         # The superclass's "settings" method returns [self.x_name, self.y_name],
         # which are the input and output image settings.
         #
-        settings = super(niiorImageProcessing, self).settings()
+        settings = super(niiorMLMDatabasePlugin, self).settings()
 
         # Append additional settings here.
         return settings + [self.gradient_choice, self.automatic_smoothing, self.scale]
@@ -306,7 +314,7 @@ scales will give you short-range gradients.
         # The superclass's "visible_settings" method returns [self.x_name,
         # self.y_name], which are the input and output image settings.
         #
-        visible_settings = super(niiorImageProcessing, self).visible_settings()
+        visible_settings = super(niiorMLMDatabasePlugin, self).visible_settings()
 
         # Configure the visibility of additional settings below.
         visible_settings += [self.gradient_choice, self.automatic_smoothing]
@@ -337,7 +345,7 @@ scales will give you short-range gradients.
         #
         self.function = gradient_image
 
-        super(niiorImageProcessing, self).run(workspace)
+        super(niiorMLMDatabasePlugin, self).run(workspace)
 
     #
     # "volumetric" indicates whether or not this module supports 3D images.
