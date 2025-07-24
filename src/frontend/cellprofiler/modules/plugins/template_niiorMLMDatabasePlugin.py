@@ -57,8 +57,6 @@ YES          NO           YES
 See also
 ^^^^^^^^
 
-Is there another **Module** that is related to this one? If so, refer
-to that **Module** in this section. Otherwise, this section can be omitted.
 
 What do I need as input?
 ^^^^^^^^^^^^^^^^^^^^^^^^
