@@ -127,15 +127,26 @@ wherever possible, include a link to the original work. For example,
 # Also, you can't misspell it by accident.
 #
 import os.path
-from cellprofiler_core.module import ImageProcessing
-from cellprofiler_core.setting import Binary
+import logging
+
+from cellprofiler_core.module.image_segmentation import ObjectProcessing
+from cellprofiler_core.object import Objects
+from cellprofiler_core.module import Module, ImageProcessing
+from cellprofiler_core.preferences import DEFAULT_OUTPUT_FOLDER_NAME
 from cellprofiler_core.setting.choice import Choice
-from cellprofiler_core.setting.text import Float
+from cellprofiler_core.setting import Binary
+from cellprofiler_core.setting.subscriber import LabelSubscriber, ImageSubscriber, FileImageSubscriber
+from cellprofiler_core.constants.measurement import C_FILE_NAME
+from cellprofiler_core.setting.text import Float, Integer, ImageName, Text, Directory, LabelName
+from cellprofiler_library.modules import savecroppedobjects
+LOGGER = logging.getLogger(__name__)
 
-GRADIENT_MAGNITUDE = "Gradient magnitude"
-GRADIENT_DIRECTION_X = "Gradient direction - X"
-GRADIENT_DIRECTION_Y = "Gradient direction - Y"
+O_PNG = "png"
+SAVE_PER_OBJECT = "Images"
 
+
+"""Parent (seed) relationship of input objects to output objects"""
+R_PARENT = "Parent"
 
 #
 # The module class.
@@ -159,8 +170,10 @@ GRADIENT_DIRECTION_Y = "Gradient direction - Y"
 #    should inherit from this class. These are modules that take objects as
 #    input and output new objects.
 #
-class niiorMLMDatabasePlugin(ImageProcessing):
+class niiorMLMDatabasePlugin(ObjectProcessing):
     #
+
+    
     # The module starts by declaring the name that's used for display,
     # the category under which it is stored and the variable revision
     # number which can be used to provide backwards compatibility if
@@ -170,7 +183,7 @@ class niiorMLMDatabasePlugin(ImageProcessing):
     # by its superclass.
     #
     module_name = "niiorMLMDatabasePlugin"
-
+    category = "Object Processing"
     variable_revision_number = 1
 
     #
@@ -191,6 +204,9 @@ class niiorMLMDatabasePlugin(ImageProcessing):
     # You can look at other modules and in cellprofiler_core.settings for
     # settings you can use.
     #
+   
+    
+    
     def create_settings(self):
         #
         # The superclass (ImageProcessing) defines two
@@ -204,7 +220,10 @@ class niiorMLMDatabasePlugin(ImageProcessing):
         # -  y_name: an ImageName makes the image available to subsequent
         #    modules.
         super(niiorMLMDatabasePlugin, self).create_settings()
-
+#         self.x_name.text = "Select the input objects"
+#         self.x_name.doc = """\
+# ToDo
+# """
         #
         # reST help that gets displayed when the user presses the
         # help button to the right of the edit box.
@@ -213,98 +232,72 @@ class niiorMLMDatabasePlugin(ImageProcessing):
         # module-specific help text by modifying the setting's "doc"
         # string.
         #
-        self.x_name.doc = """\
-This is the image that the module operates on. You can choose any image
-that is made available by a prior module.
-
-**ImageTemplate** will do something to this image.
-"""
-
+        
         #
         # Here's a choice box - the user gets a drop-down list of what
         # can be done.
         #
-        self.gradient_choice = Choice(
-            text="Gradient choice:",
-            # The choice takes a list of possibilities. The first one
-            # is the default - the one the user will typically choose.
-            choices=[GRADIENT_DIRECTION_X, GRADIENT_DIRECTION_Y, GRADIENT_MAGNITUDE],
-            # The default value is the first choice in choices. You can
-            # specify a different initial value using the value keyword.
-            value=GRADIENT_MAGNITUDE,
-            #
-            # Here, in the documentation, we do a little trick so that
-            # we use the actual text that's displayed in the documentation.
-            #
-            # {GRADIENT_MAGNITUDE} will get changed into "Gradient magnitude"
-            # etc. Python will look in keyword arguments for format()
-            # for the "GRADIENT_" names and paste them in where it sees
-            # a matching {GRADIENT_...}.
-            #
+        
+        #Settings I added
+        
+    
+        self.file_format = Choice(
+            "Saved file format",
+            [O_PNG],
+            value=O_PNG,
             doc="""\
-Choose what to calculate:
-
--  *{GRADIENT_MAGNITUDE}*: calculate the magnitude of the gradient at
-   each pixel.
--  *{GRADIENT_DIRECTION_X}*: get the relative contribution of the
-   gradient in the X direction (.5 = no contribution, 0 to .5 =
-   decreasing with increasing X, .5 to 1 = increasing with increasing
-   X).
--  *{GRADIENT_DIRECTION_Y}*: get the relative contribution of the
-   gradient in the Y direction.
-""".format(
-                **{
-                    "GRADIENT_MAGNITUDE": GRADIENT_MAGNITUDE,
-                    "GRADIENT_DIRECTION_X": GRADIENT_DIRECTION_X,
-                    "GRADIENT_DIRECTION_Y": GRADIENT_DIRECTION_Y,
-                }
+            ToDo""".format(
+                O_PNG=O_PNG
             ),
         )
 
-        #
-        # A binary setting displays a checkbox.
-        #
-        self.automatic_smoothing = Binary(
-            text="Automatically choose the smoothing scale?",
-            value=True,  # The default value is to choose automatically
-            doc="The module will automatically choose a smoothing scale for you if you leave this checked.",
+        
+        self.objects_name = LabelSubscriber(
+            "Objects", 
+            doc="Select the objects to export as per-object crops.",
         )
-
-        #
-        # We do a little smoothing which supplies a scale to the gradient.
-        #
-        # We use a float setting so that the user can give us a number
-        # for the scale. The control will turn red if the user types in
-        # an invalid scale.
-        #
-        self.scale = Float(
-            text="Scale",
-            value=1,  # The default value is 1 - a short-range scale
-            minval=0.1,  # We don't let the user type in really small values
-            maxval=100,  # or large values
+        self.image_name = ImageSubscriber(
+            "Image to crop", 
+            doc="Select the image to crop",
+        )
+        self.directory = Directory(
+            "Directory",
+            doc="Enter the directory where object crops are saved.",
+            value=DEFAULT_OUTPUT_FOLDER_NAME,
+        )
+        self.file_image_name = FileImageSubscriber(
+            "Select image name to use as a prefix",
+            "None",
             doc="""\
-This is a scaling factor that supplies the sigma for a gaussian that's
-used to smooth the image. The gradient is calculated on the smoothed
-image, so large scales will give you long-range gradients and small
-scales will give you short-range gradients.
-""",
+Select an image loaded using **NamesAndTypes**. The original filename
+will be used as the prefix for the output filename."""
         )
+       
+        
+        
+        
+        #End of my settings
+        
 
-    #
-    # The "settings" method tells CellProfiler about the settings you
-    # have in your module. CellProfiler uses the list for saving
-    # and restoring values for your module when it saves or loads a
-    # pipeline file.
-    #
     def settings(self):
         #
         # The superclass's "settings" method returns [self.x_name, self.y_name],
         # which are the input and output image settings.
-        #
+        
         settings = super(niiorMLMDatabasePlugin, self).settings()
-
+       
         # Append additional settings here.
-        return settings + [self.gradient_choice, self.automatic_smoothing, self.scale]
+        return (
+            settings
+            + [         
+                self.image_name,
+                self.file_image_name,
+                self.objects_name,
+                self.directory,
+
+            ]
+            
+        )
 
     #
     # "visible_settings" tells CellProfiler which settings should be
@@ -320,21 +313,30 @@ scales will give you short-range gradients.
         # self.y_name], which are the input and output image settings.
         #
         visible_settings = super(niiorMLMDatabasePlugin, self).visible_settings()
-
+        visible_settings += [
+                 self.image_name,
+                 self.objects_name,
+                 self.directory,
+                 self.file_image_name
+                ]
         # Configure the visibility of additional settings below.
-        visible_settings += [self.gradient_choice, self.automatic_smoothing]
+        
 
-        #
-        # Show the user the scale only if self.wants_smoothing is checked
-        #
-        if not self.automatic_smoothing:
-            visible_settings += [self.scale]
+       
 
         return visible_settings
 
     #
     # CellProfiler calls "run" on each image set in your pipeline.
     #
+    
+    def display(self, workspace, figure):
+        figure.set_subplots((1, 1))
+
+        figure.subplot_table(0, 0, [["\n".join(workspace.display_data.filenames)]])
+
+
+    
     def run(self, workspace):
         #
         # The superclass's "run" method handles retreiving the input image
@@ -348,9 +350,34 @@ scales will give you short-range gradients.
         # the module settings as they are returned from "settings" (excluding
         # "self.y_data", or the output image).
         #
-        self.function = gradient_image
-
-        super(niiorMLMDatabasePlugin, self).run(workspace)
+       
+        
+        # super(niiorMLMDatabasePlugin, self).run(workspace)
+        objects = workspace.object_set.get_objects(self.objects_name.value)
+        input_objects = objects.segmented
+        directory = self.directory.get_absolute_path(workspace.measurements)
+        input_objects_name = self.objects_name.value
+        
+        input_filename = workspace.measurements.get_current_measurement("Image", self.source_file_name_feature)
+        input_filename = os.path.splitext(input_filename)[0]
+        
+        images = workspace.image_set
+        x = images.get_image(self.image_name.value).pixel_data        
+        
+        exp_options = {
+            "png": "png"
+        }
+        
+        filenames = savecroppedobjects(
+            input_objects=input_objects,
+            save_dir=directory,
+            export_as=SAVE_PER_OBJECT,
+            input_image=x,
+            file_format=exp_options[self.file_format.value],
+            save_names = {"input_filename": input_filename, "input_objects_name": input_objects_name}            
+        )
+        if self.show_window:
+            workspace.display_data.filenames = filenames
 
     #
     # "volumetric" indicates whether or not this module supports 3D images.
@@ -361,7 +388,10 @@ scales will give you short-range gradients.
     def volumetric(self):
         return False
 
-
+    @property
+    def source_file_name_feature(self):
+        """The file name measurement for the exemplar disk image"""
+        return "_".join((C_FILE_NAME, self.file_image_name.value))
 #
 # This is the function that gets called during "run" to create the output image.
 # The first parameter must be the input image data. The remaining parameters are
@@ -369,36 +399,36 @@ scales will give you short-range gradients.
 #
 # This function must return the output image data (as a numpy array).
 #
-def gradient_image(pixels, gradient_choice, automatic_smoothing, scale):
-    #
-    # Get the smoothing parameter
-    #
-    if automatic_smoothing:
-        # Pick the mode of the power spectrum - obviously this
-        # is pretty hokey, not intended to really find a good number.
-        #
-        fft = numpy.fft.fft2(pixels)
-        power2 = numpy.sqrt((fft * fft.conjugate()).real)
-        mode = numpy.argwhere(power2 == power2.max())[0]
-        scale = numpy.sqrt(numpy.sum((mode + 0.5) ** 2))
+# def gradient_image(pixels, gradient_choice, automatic_smoothing, scale):
+#     #
+#     # Get the smoothing parameter
+#     #
+#     if automatic_smoothing:
+#         # Pick the mode of the power spectrum - obviously this
+#         # is pretty hokey, not intended to really find a good number.
+#         #
+#         fft = numpy.fft.fft2(pixels)
+#         power2 = numpy.sqrt((fft * fft.conjugate()).real)
+#         mode = numpy.argwhere(power2 == power2.max())[0]
+#         scale = numpy.sqrt(numpy.sum((mode + 0.5) ** 2))
 
-    gradient_magnitude = scipy.ndimage.gaussian_gradient_magnitude(pixels, scale)
+#     gradient_magnitude = scipy.ndimage.gaussian_gradient_magnitude(pixels, scale)
 
-    if gradient_choice == GRADIENT_MAGNITUDE:
-        gradient_image = gradient_magnitude
-    else:
-        # Image data is indexed by rows and columns, with a given point located at
-        # position (row, column). Here, x represents the column coordinate (at index 1)
-        # and y represents the row coordinate (at index 0).
-        #
-        # You can learn more about image coordinate systems here:
-        # http://scikit-image.org/docs/dev/user_guide/numpy_images.html#coordinate-conventions
-        x = scipy.ndimage.correlate1d(gradient_magnitude, [-1, 0, 1], 1)
-        y = scipy.ndimage.correlate1d(gradient_magnitude, [-1, 0, 1], 0)
-        norm = numpy.sqrt(x ** 2 + y ** 2)
-        if gradient_choice == GRADIENT_DIRECTION_X:
-            gradient_image = 0.5 + x / norm / 2
-        else:
-            gradient_image = 0.5 + y / norm / 2
+#     if gradient_choice == GRADIENT_MAGNITUDE:
+#         gradient_image = gradient_magnitude
+#     else:
+#         # Image data is indexed by rows and columns, with a given point located at
+#         # position (row, column). Here, x represents the column coordinate (at index 1)
+#         # and y represents the row coordinate (at index 0).
+#         #
+#         # You can learn more about image coordinate systems here:
+#         # http://scikit-image.org/docs/dev/user_guide/numpy_images.html#coordinate-conventions
+#         x = scipy.ndimage.correlate1d(gradient_magnitude, [-1, 0, 1], 1)
+#         y = scipy.ndimage.correlate1d(gradient_magnitude, [-1, 0, 1], 0)
+#         norm = numpy.sqrt(x ** 2 + y ** 2)
+#         if gradient_choice == GRADIENT_DIRECTION_X:
+#             gradient_image = 0.5 + x / norm / 2
+#         else:
+#             gradient_image = 0.5 + y / norm / 2
 
-    return gradient_image
+#     return gradient_image
