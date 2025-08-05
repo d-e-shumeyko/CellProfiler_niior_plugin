@@ -6,6 +6,7 @@
 
 import numpy
 import scipy.ndimage
+import skimage
 
 #################################
 #
@@ -129,12 +130,13 @@ wherever possible, include a link to the original work. For example,
 import os.path
 import logging
 
+from cellprofiler_core.image import Image
 from cellprofiler_core.module.image_segmentation import ObjectProcessing
 from cellprofiler_core.object import Objects
 from cellprofiler_core.module import Module, ImageProcessing
 from cellprofiler_core.preferences import DEFAULT_OUTPUT_FOLDER_NAME
 from cellprofiler_core.setting.choice import Choice
-from cellprofiler_core.setting import Binary
+from cellprofiler_core.setting import Divider, HiddenCount, SettingsGroup, Binary
 from cellprofiler_core.setting.subscriber import LabelSubscriber, ImageSubscriber, FileImageSubscriber
 from cellprofiler_core.constants.measurement import C_FILE_NAME
 from cellprofiler_core.setting.text import Float, Integer, ImageName, Text, Directory, LabelName
@@ -143,6 +145,7 @@ LOGGER = logging.getLogger(__name__)
 
 O_PNG = "png"
 SAVE_PER_OBJECT = "Images"
+R_TO_SIZE = "Resize by specifying desired final dimensions"
 
 
 """Parent (seed) relationship of input objects to output objects"""
@@ -273,7 +276,23 @@ Select an image loaded using **NamesAndTypes**. The original filename
 will be used as the prefix for the output filename."""
         )
        
-        
+        self.specific_width = Integer(
+            "Width (x) of the final image",
+            28,
+            minval=1,
+            doc="""\
+
+Enter the desired width of the final image, in pixels.""",
+        )
+
+        self.specific_height = Integer(
+            "Height (y) of the final image",
+            28,
+            minval=1,
+            doc="""\
+
+Enter the desired height of the final image, in pixels.""",
+        )
         
         
         #End of my settings
@@ -294,6 +313,8 @@ will be used as the prefix for the output filename."""
                 self.file_image_name,
                 self.objects_name,
                 self.directory,
+                self.specific_height,
+                self.specific_width
 
             ]
             
@@ -368,7 +389,7 @@ will be used as the prefix for the output filename."""
             "png": "png"
         }
         
-        filenames = savecroppedobjects(
+        filenames = saveresizedcroppedobjects(
             input_objects=input_objects,
             save_dir=directory,
             export_as=SAVE_PER_OBJECT,
@@ -432,3 +453,107 @@ will be used as the prefix for the output filename."""
 #             gradient_image = 0.5 + y / norm / 2
 
 #     return gradient_image
+
+
+def resize_and_save_object_image_crops(
+    input_image,
+    input_objects,
+    save_dir,
+    file_format="tiff8",
+    nested_save=False,
+    save_names = {"input_filename": None, "input_objects_name": None},
+    volumetric=False
+    ):
+    """
+    For a given input_objects array, save crops for each 
+    object of the provided input_image.
+    """
+    # Build save paths
+    if nested_save:
+        if not save_names["input_filename"] and not save_names["input_objects_name"]:
+            raise ValueError("Must provide a save_names['input_filename'] or save_names['input_objects_name'] for nested save.")
+        save_path = os.path.join(
+            save_dir, 
+            save_names["input_filename"] if save_names["input_filename"] else save_names["input_objects_name"],
+            )
+    else:
+        save_path = save_dir
+
+    if not os.path.exists(save_path):
+        os.makedirs(save_path, exist_ok=True)
+
+    unique_labels = numpy.unique(input_objects)
+
+    if unique_labels[0] == 0:
+        unique_labels = unique_labels[1:]
+
+    labels = input_objects
+
+    if len(input_image.shape) == len(input_objects.shape) + 1 and not volumetric:
+        labels = numpy.repeat(
+            labels[:, :, numpy.newaxis], input_image.shape[-1], axis=2
+        )
+
+    # Construct filename
+    save_filename = f"{save_names['input_filename']+'_' if save_names['input_filename'] else ''}{save_names['input_objects_name']+'_' if save_names['input_objects_name'] else ''}"
+
+    save_filenames = []
+    
+    for label in unique_labels:
+        file_extension = "tiff" if "tiff" in file_format else "png"
+
+        label_save_filename = os.path.join(save_path, save_filename + f"{label}.{file_extension}")
+        save_filenames.append(label_save_filename)
+        mask_in = labels == label
+        properties = skimage.measure.regionprops(
+                mask_in.astype(int), intensity_image=input_image
+            )
+        mask = properties[0].intensity_image
+        
+        if file_format.casefold() == "png":
+            skimage.io.imsave(
+                label_save_filename,
+                skimage.img_as_ubyte(mask),
+                check_contrast=False
+            )
+        elif file_format.casefold() == "tiff8":
+            skimage.io.imsave(
+                label_save_filename,
+                skimage.img_as_ubyte(mask),
+                compression=(8,6),
+                check_contrast=False,
+            )
+        elif file_format.casefold() == "tiff16":
+            skimage.io.imsave(
+                label_save_filename,
+                skimage.img_as_uint(mask),
+                compression=(8,6),
+                check_contrast=False,
+            )
+        else:
+            raise ValueError(f"{file_format} not in 'png', 'tiff8', or 'tiff16'")
+    
+    return save_filenames
+
+def saveresizedcroppedobjects(
+    input_objects,
+    save_dir,
+    export_as="masks",
+    input_image=None,
+    file_format="tiff8",
+    nested_save=False,
+    save_names={"input_filename": None, "input_objects_name": None},
+    volumetric=False
+    ):
+    if export_as.casefold() in ("image", "images"):
+        filenames = resize_and_save_object_image_crops(
+            input_image=input_image,
+            input_objects=input_objects,
+            save_dir=save_dir,
+            file_format=file_format,
+            nested_save=nested_save,
+            save_names=save_names,
+            volumetric=volumetric
+        )
+    
+    return filenames

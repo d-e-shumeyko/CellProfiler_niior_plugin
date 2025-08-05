@@ -152,3 +152,4 @@ def save_object_masks(
             raise ValueError(f"{file_format} not in 'png', 'tiff8', or 'tiff16'")
         
     return filenames
+
