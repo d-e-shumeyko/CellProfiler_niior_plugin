@@ -1203,7 +1203,7 @@ def add_recent_file(filename, category=""):
         config_write(recent_file(i, category), filename)
 
 
-__plugin_directory = "D:/cellprofiler/CellProfiler/CellProfiler-plugins-master/active_plugins"
+__plugin_directory = "CellProfiler-plugins-master/active_plugins"
 __conserve_memory = None
 
 
