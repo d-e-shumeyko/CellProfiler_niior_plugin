@@ -400,6 +400,8 @@ Enter the desired number of planes in the final image.""",
                  self.directory,
                  self.file_image_name
                 ]
+        return visible_settings 
+
         # Configure the visibility of additional settings below.
         
     def add_image(self, can_remove=True):
@@ -439,8 +441,7 @@ resized with the same settings as the first image.""",
         self.additional_images.append(group)
        
 
-        return visible_settings
-
+        
     #
     # CellProfiler calls "run" on each image set in your pipeline.
     #
