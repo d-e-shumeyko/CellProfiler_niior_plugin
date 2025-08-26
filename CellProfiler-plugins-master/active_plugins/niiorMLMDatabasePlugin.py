@@ -136,6 +136,7 @@ from cellprofiler_core.object import Objects
 from cellprofiler_core.module import Module, ImageProcessing
 from cellprofiler_core.preferences import DEFAULT_OUTPUT_FOLDER_NAME
 from cellprofiler_core.setting.choice import Choice
+from cellprofiler_core.setting.do_something import DoSomething, RemoveSettingButton
 from cellprofiler_core.setting import Divider, HiddenCount, SettingsGroup, Binary
 from cellprofiler_core.setting.subscriber import LabelSubscriber, ImageSubscriber, FileImageSubscriber
 from cellprofiler_core.constants.measurement import C_FILE_NAME
@@ -146,8 +147,8 @@ LOGGER = logging.getLogger(__name__)
 O_PNG = "png"
 SAVE_PER_OBJECT = "Images"
 R_TO_SIZE = "Resize by specifying desired final dimensions"
-
-
+C_MANUAL = "Manual"
+I_NEAREST_NEIGHBOR = "Nearest Neighbor"
 """Parent (seed) relationship of input objects to output objects"""
 R_PARENT = "Parent"
 
@@ -294,7 +295,61 @@ Enter the desired width of the final image, in pixels.""",
 Enter the desired height of the final image, in pixels.""",
         )
         
+        # Resize portion
         
+        
+        self.size_method = Choice(
+            "Resizing method",
+            R_TO_SIZE,
+            doc="""\
+The following options are available:
+-  *Resize by specifying desired final dimensions:* Enter the new height and width of the resized image, in units of pixels.""",
+        )
+        
+        self.use_manual = Choice(
+            "Method to specify the dimensions",
+            C_MANUAL,
+            doc="""\
+*(Used only if resizing by specifying the dimensions)*
+
+You have two options on how to resize your image:
+
+-  *{C_MANUAL}:* Specify the height and width of the output image.
+
+            """.format(
+                **{ C_MANUAL}
+            ),
+        )
+
+        self.specific_width = Integer(
+            "Width (x) of the final image",
+            28,
+            minval=1,
+            doc="""\
+*(Used only if resizing by specifying desired final dimensions)*
+
+Enter the desired width of the final image, in pixels.""",
+        )
+
+        self.specific_height = Integer(
+            "Height (y) of the final image",
+            28,
+            minval=1,
+            doc="""\
+*(Used only if resizing by specifying desired final dimensions)*
+
+Enter the desired height of the final image, in pixels.""",
+        )
+
+        self.specific_planes = Integer(
+            "# of planes (z) in the final image",
+            1,
+            minval=1,
+            doc="""\
+*(Used only if resizing by specifying desired final dimensions)*
+
+Enter the desired number of planes in the final image.""",
+        )
         #End of my settings
         
 
@@ -314,7 +369,12 @@ Enter the desired height of the final image, in pixels.""",
                 self.objects_name,
                 self.directory,
                 self.specific_height,
-                self.specific_width
+                self.specific_width,
+                self.size_method,
+                self.use_manual,
+                self.specific_width,
+                self.specific_height,
+                self.specific_planes 
 
             ]
             
@@ -342,7 +402,41 @@ Enter the desired height of the final image, in pixels.""",
                 ]
         # Configure the visibility of additional settings below.
         
+    def add_image(self, can_remove=True):
+        group = SettingsGroup()
 
+        if can_remove:
+            group.append("divider", Divider(line=False))
+
+        group.append(
+            "input_image_name",
+            ImageSubscriber(
+                "Select the additional image?",
+                "None",
+                doc="""\
+What is the name of the additional image to resize? This image will be
+resized with the same settings as the first image.""",
+            ),
+        )
+
+        group.append(
+            "output_image_name",
+            ImageName(
+                "Name the output image",
+                "ResizedBlue",
+                doc="What is the name of the additional resized image?",
+            ),
+        )
+
+        if can_remove:
+            group.append(
+                "remover",
+                RemoveSettingButton(
+                    "", "Remove above image", self.additional_images, group
+                ),
+            )
+
+        self.additional_images.append(group)
        
 
         return visible_settings
@@ -556,4 +650,126 @@ def saveresizedcroppedobjects(
             volumetric=volumetric
         )
     
-    return filenames
+    return 
+
+# Resize methods
+
+def resized_shape(self, image, workspace):
+        image_pixels = image.pixel_data
+
+        shape = numpy.array(image_pixels.shape).astype(float)
+
+
+        if self.size_method.value == R_BY_FACTOR:
+            factor_x = self.resizing_factor_x.value
+
+            factor_y = self.resizing_factor_y.value
+
+            if image.volumetric:
+                factor_z = self.resizing_factor_z.value
+                height, width = shape[1:3]
+                planes = shape [0]
+                planes = numpy.round(planes * factor_z)
+            else:
+                height, width = shape[:2]
+
+            height = numpy.round(height * factor_y)
+
+            width = numpy.round(width * factor_x)
+
+        else:
+            if self.use_manual_or_image.value == C_MANUAL:
+                height = self.specific_height.value
+                width = self.specific_width.value
+                if image.volumetric:
+                    planes = self.specific_planes.value
+            else:
+                other_image = workspace.image_set.get_image(self.specific_image.value)
+
+                if image.volumetric:
+                    planes, height, width = other_image.pixel_data.shape[:3]
+                else:
+                    height, width = other_image.pixel_data.shape[:2]
+
+        new_shape = []
+
+        if image.volumetric:
+            new_shape += [planes]
+
+        new_shape += [height, width]
+
+        if image.multichannel:
+            new_shape += [shape[-1]]
+
+        return numpy.asarray(new_shape)
+def spline_order(self):
+        if self.interpolation.value == I_NEAREST_NEIGHBOR:
+            return 0
+        else:
+            LOGGER.warning(
+                'interpolation error'
+            )
+def apply_resize(self, workspace, input_image_name, output_image_name):
+        image = workspace.image_set.get_image(input_image_name)
+
+        image_pixels = image.pixel_data
+
+        new_shape = self.resized_shape(image, workspace)
+
+        order = self.spline_order()
+
+        if image.volumetric and image.multichannel:
+            output_pixels = numpy.zeros(new_shape.astype(int), dtype=image_pixels.dtype)
+
+            for idx in range(int(new_shape[-1])):
+                output_pixels[:, :, :, idx] = skimage.transform.resize(
+                    image_pixels[:, :, :, idx],
+                    new_shape[:-1],
+                    order=order,
+                    mode="symmetric",
+                )
+        else:
+            output_pixels = skimage.transform.resize(
+                image_pixels, new_shape, order=order, mode="symmetric"
+            )
+
+        if image.multichannel and len(new_shape) > image.dimensions:
+            new_shape = new_shape[:-1]
+
+        mask = skimage.transform.resize(image.mask, new_shape, order=0, mode="constant")
+
+        mask = skimage.img_as_bool(mask)
+
+        if image.has_crop_mask:
+            cropping = skimage.transform.resize(
+                image.crop_mask, new_shape, order=0, mode="constant"
+            )
+
+            cropping = skimage.img_as_bool(cropping)
+        else:
+            cropping = None
+
+        output_image = Image(
+            output_pixels,
+            parent_image=image,
+            mask=mask,
+            crop_mask=cropping,
+            dimensions=image.dimensions,
+        )
+
+        workspace.image_set.add(output_image_name, output_image)
+
+        if self.show_window:
+            if hasattr(workspace.display_data, "input_images"):
+                workspace.display_data.multichannel += [image.multichannel]
+                workspace.display_data.input_images += [image.pixel_data]
+                workspace.display_data.output_images += [output_image.pixel_data]
+                workspace.display_data.input_image_names += [input_image_name]
+                workspace.display_data.output_image_names += [output_image_name]
+            else:
+                workspace.display_data.dimensions = image.dimensions
+                workspace.display_data.multichannel = [image.multichannel]
+                workspace.display_data.input_images = [image.pixel_data]
+                workspace.display_data.output_images = [output_image.pixel_data]
+                workspace.display_data.input_image_names = [input_image_name]
+                workspace.display_data.output_image_names = [output_image_name]
