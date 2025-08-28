@@ -7,6 +7,7 @@
 import numpy
 import scipy.ndimage
 import skimage
+import itertools
 
 #################################
 #
@@ -134,7 +135,7 @@ from cellprofiler_core.image import Image
 from cellprofiler_core.module.image_segmentation import ObjectProcessing
 from cellprofiler_core.object import Objects
 from cellprofiler_core.module import Module, ImageProcessing
-from cellprofiler_core.preferences import DEFAULT_OUTPUT_FOLDER_NAME
+from cellprofiler_core.preferences import DEFAULT_OUTPUT_FOLDER_NAME, get_default_colormap
 from cellprofiler_core.setting.choice import Choice
 from cellprofiler_core.setting.do_something import DoSomething, RemoveSettingButton
 from cellprofiler_core.setting import Divider, HiddenCount, SettingsGroup, Binary
@@ -142,6 +143,7 @@ from cellprofiler_core.setting.subscriber import LabelSubscriber, ImageSubscribe
 from cellprofiler_core.constants.measurement import C_FILE_NAME
 from cellprofiler_core.setting.text import Float, Integer, ImageName, Text, Directory, LabelName
 from cellprofiler_library.modules import savecroppedobjects
+
 LOGGER = logging.getLogger(__name__)
 
 O_PNG = "png"
@@ -350,6 +352,14 @@ Enter the desired height of the final image, in pixels.""",
 
 Enter the desired number of planes in the final image.""",
         )
+        
+        self.interpolation = Choice(
+            "",
+            I_NEAREST_NEIGHBOR
+            
+        )
+        
+        
         #End of my settings
         
 
@@ -374,7 +384,8 @@ Enter the desired number of planes in the final image.""",
                 self.use_manual,
                 self.specific_width,
                 self.specific_height,
-                self.specific_planes 
+                self.specific_planes,
+                self.interpolation
 
             ]
             
@@ -449,7 +460,7 @@ resized with the same settings as the first image.""",
     def display(self, workspace, figure):
         figure.set_subplots((1, 1))
 
-        figure.subplot_table(0, 0, [["\n".join(workspace.display_data.filenames)]])
+        #figure.subplot_table(0, 0, [["\n".join(workspace.display_data.filenames)]])
 
 
     
@@ -471,6 +482,7 @@ resized with the same settings as the first image.""",
         # super(niiorMLMDatabasePlugin, self).run(workspace)
         objects = workspace.object_set.get_objects(self.objects_name.value)
         input_objects = objects.segmented
+        output_objects = ""
         directory = self.directory.get_absolute_path(workspace.measurements)
         input_objects_name = self.objects_name.value
         
@@ -484,16 +496,19 @@ resized with the same settings as the first image.""",
             "png": "png"
         }
 
-        self.apply_resize(workspace, input_objects_name, input_objects_name)
+        
+        
         
         filenames = saveresizedcroppedobjects(
-            input_objects=input_objects,
+            input_objects,
             save_dir=directory,
             export_as=SAVE_PER_OBJECT,
             input_image=x,
             file_format=exp_options[self.file_format.value],
             save_names = {"input_filename": input_filename, "input_objects_name": input_objects_name}            
         )
+        apply_resize(self, workspace, input_objects_name, output_objects)
+    
         if self.show_window:
             workspace.display_data.filenames = filenames
 
@@ -658,41 +673,23 @@ def saveresizedcroppedobjects(
 # Resize methods
 
 def resized_shape(self, image, workspace):
+    
+        image = object_to_image(self, workspace)
+
         image_pixels = image.pixel_data
 
         shape = numpy.array(image_pixels.shape).astype(float)
 
 
-        if self.size_method.value == R_BY_FACTOR:
-            factor_x = self.resizing_factor_x.value
+       
 
-            factor_y = self.resizing_factor_y.value
-
-            if image.volumetric:
-                factor_z = self.resizing_factor_z.value
-                height, width = shape[1:3]
-                planes = shape [0]
-                planes = numpy.round(planes * factor_z)
-            else:
-                height, width = shape[:2]
-
-            height = numpy.round(height * factor_y)
-
-            width = numpy.round(width * factor_x)
-
-        else:
-            if self.use_manual_or_image.value == C_MANUAL:
-                height = self.specific_height.value
-                width = self.specific_width.value
-                if image.volumetric:
-                    planes = self.specific_planes.value
-            else:
-                other_image = workspace.image_set.get_image(self.specific_image.value)
-
-                if image.volumetric:
-                    planes, height, width = other_image.pixel_data.shape[:3]
-                else:
-                    height, width = other_image.pixel_data.shape[:2]
+        
+        
+        height = self.specific_height.value
+        width = self.specific_width.value
+        if image.volumetric:
+            planes = self.specific_planes.value
+        
 
         new_shape = []
 
@@ -713,29 +710,29 @@ def spline_order(self):
                 'interpolation error'
             )
 def apply_resize(self, workspace, input_image_name, output_image_name):
-        objects = workspace.object_set.get_objects(self.objects_name.value)
+        image =  object_to_image(self, workspace)
+        directory = self.directory.get_absolute_path(workspace.measurements)
+        image_pixels = image.pixel_data
 
-        image_pixels = objects.pixel_data
+        new_shape = resized_shape(self, image, workspace)
 
-        new_shape = self.resized_shape(objects, workspace)
-
-        order = self.spline_order()
+        order = spline_order(self)
 
         
         output_pixels = skimage.transform.resize(
                 image_pixels, new_shape, order=order, mode="symmetric"
             )
 
-        if objects.multichannel and len(new_shape) > objects.dimensions:
+        if image.multichannel and len(new_shape) > image.dimensions:
             new_shape = new_shape[:-1]
 
-        mask = skimage.transform.resize(objects.mask, new_shape, order=0, mode="constant")
+        mask = skimage.transform.resize(image.mask, new_shape, order=0, mode="constant")
 
         mask = skimage.img_as_bool(mask)
 
-        if objects.has_crop_mask:
+        if image.has_crop_mask:
             cropping = skimage.transform.resize(
-                objects.crop_mask, new_shape, order=0, mode="constant"
+                image.crop_mask, new_shape, order=0, mode="constant"
             )
 
             cropping = skimage.img_as_bool(cropping)
@@ -744,25 +741,113 @@ def apply_resize(self, workspace, input_image_name, output_image_name):
 
         output_image = Image(
             output_pixels,
-            parent_image=objects,
+            parent_image=image,
             mask=mask,
             crop_mask=cropping,
-            dimensions=objects.dimensions,
+            dimensions=image.dimensions,
         )
 
         workspace.image_set.add(output_image_name, output_image)
+        save_resized_images(image, output_image, directory, file_format="png", save_names={"input_filename": None, "input_objects_name": None})
+        
+        
+
+
 
         if self.show_window:
             if hasattr(workspace.display_data, "input_images"):
-                workspace.display_data.multichannel += [objects.multichannel]
-                workspace.display_data.input_images += [objects.pixel_data]
+                workspace.display_data.multichannel += [image.multichannel]
+                workspace.display_data.input_images += [image.pixel_data]
                 workspace.display_data.output_images += [output_image.pixel_data]
                 workspace.display_data.input_image_names += [input_image_name]
                 workspace.display_data.output_image_names += [output_image_name]
             else:
-                workspace.display_data.dimensions = objects.dimensions
-                workspace.display_data.multichannel = [objects.multichannel]
-                workspace.display_data.input_images = [objects.pixel_data]
+                workspace.display_data.dimensions = image.dimensions
+                workspace.display_data.multichannel = [image.multichannel]
+                workspace.display_data.input_images = [image.pixel_data]
                 workspace.display_data.output_images = [output_image.pixel_data]
                 workspace.display_data.input_image_names = [input_image_name]
                 workspace.display_data.output_image_names = [output_image_name]
+                
+                
+                
+                
+# to save resized crops
+def save_resized_images(input_image, 
+                        output_image, save_dir, 
+                        file_format="png", 
+                        save_names = {"input_filename": None, "input_objects_name": None},):
+    os.makedirs(save_dir, exist_ok=True)
+    
+    unique_labels = numpy.unique(output_image)
+    
+    if unique_labels[0] == 0:
+        unique_labels = unique_labels[1:]
+
+    labels = unique_labels
+    # if len(output_image.pixel_data) == len(input_image.pixel_data) + 1 :
+       # flat = list(itertools.chain.from_iterable(labels))
+    labels = numpy.repeat(
+        labels[ :, numpy.newaxis], input_image.pixel_data[-1], axis=2
+        )
+
+
+
+ 
+    
+    save_filename = f"{save_names['input_filename']+'_' if save_names['input_filename'] else ''}{save_names['input_objects_name']+'_' if save_names['input_objects_name'] else ''}"
+
+    save_filenames = []
+    for label in unique_labels:
+        file_extension = "tiff" if "tiff" in file_format else "png"
+
+        label_save_filename = os.path.join(save_dir, save_filename + f"{label}.{file_extension}")
+        save_filenames.append(label_save_filename)
+        mask_in = labels == label
+        properties = skimage.measure.regionprops(
+                mask_in.astype(int), # intensity_image=input_image
+            )
+        mask = properties[0].intensity_image
+        
+        if file_format.casefold() == "png":
+            skimage.io.imsave(
+                label_save_filename,
+                skimage.img_as_ubyte(mask),
+                check_contrast=False
+            )
+        else:
+            raise ValueError(f"{file_format} not in 'png', 'tiff8', or 'tiff16'")
+    return save_filenames
+              
+                
+                
+                
+# object to image
+
+def object_to_image (self, workspace):
+    
+    objects = workspace.object_set.get_objects(self.objects_name.value)
+    # objects = workspace.object_set.get_objects
+    alpha = numpy.zeros(objects.shape)
+    convert = True
+    
+    
+    
+    image_name = ImageName
+    
+    pixel_data = numpy.zeros(objects.shape + (3,))
+    
+    cm_name = get_default_colormap()
+    
+    mask = alpha > 0
+    
+    pixel_data[mask, :] = pixel_data[mask, :] / alpha[mask][:, numpy.newaxis]
+    
+    image = Image(
+            pixel_data,
+            parent_image=objects.parent_image,
+            convert=convert,
+            dimensions=len(objects.shape),
+        )
+    workspace.image_set.add(self.image_name.value, image)
+    return image
